@@ -1,12 +1,12 @@
 """
-Assignment 1 — F1 Pit Stop Prediction Training Pipeline
+Assignment 1: F1 Pit Stop Prediction
 
-Business framing: Predict whether a car will pit on the NEXT lap.
+Business framing: Predict whether a car will pit on the next lap.
 F1 strategy engineers use this to anticipate rival undercuts and decide
 whether to bring their own car in to defend track position.
 
 Target: PitNextLap (binary)
-Model: logistic regression trained three ways on the same race-based split.
+Model: logistic regression.
 """
 
 import numpy as np
@@ -32,17 +32,17 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 
 
-# ── 1. LOAD ────────────────────────────────────────────────────────────────────
+# 1. LOAD
 print("Loading data...")
 df = pd.read_csv(ROOT / "train (2).csv")
 print(f"  {df.shape[0]:,} rows × {df.shape[1]} columns")
 print(f"  Target: {df['PitNextLap'].value_counts().to_dict()}  (positive rate: {df['PitNextLap'].mean():.3%})")
 
 
-# ── 2. FEATURE ENGINEERING ────────────────────────────────────────────────────
-# Softer compounds degrade faster; assign an ordinal "softness" score.
+# 2. FEATURE ENGINEERING
+# Softer compounds degrade faster so we assign a score.
 COMPOUND_SOFTNESS = {'WET': 0, 'INTERMEDIATE': 1, 'HARD': 2, 'MEDIUM': 3, 'SOFT': 4}
-# Rough expected stint length (laps) by compound under normal conditions.
+#expected stint length, the number of laps, by compound.
 COMPOUND_LIFE = {'WET': 20, 'INTERMEDIATE': 25, 'HARD': 45, 'MEDIUM': 35, 'SOFT': 25}
 
 FEATURE_NAMES = [
@@ -74,10 +74,8 @@ X = make_features(df)
 y = df['PitNextLap'].values.astype('float32')
 
 
-# ── 3. RACE-BASED TRAIN / VAL / TEST SPLIT ────────────────────────────────────
-# Laps from the same race must stay together: splitting randomly within a race
-# would let the model see e.g. lap 50 context and predict lap 30 — information
-# that wouldn't be available in real deployment.
+# 3. RACE-BASED TRAIN / VAL / TEST SPLIT
+# Laps from the same race must stay together
 df['_key'] = df['Race'] + '|' + df['Year'].astype(str)
 race_keys = df['_key'].unique().tolist()
 
@@ -104,7 +102,7 @@ print(f"\nSplit: train={len(y_tr):,}  val={len(y_va):,}  test={len(y_te):,}")
 print(f"Positive rate — train: {y_tr.mean():.3%}  val: {y_va.mean():.3%}  test: {y_te.mean():.3%}")
 
 
-# ── 4. SCALE ──────────────────────────────────────────────────────────────────
+# 4. SCALE
 scaler = StandardScaler()
 X_tr_s = scaler.fit_transform(X_tr).astype('float32')
 X_va_s = scaler.transform(X_va).astype('float32')
@@ -117,7 +115,7 @@ print(f"Class imbalance pos_weight: {pos_weight:.2f}")
 N_FEAT = X_tr_s.shape[1]
 
 
-# ── 5. SKLEARN LOGISTIC REGRESSION ────────────────────────────────────────────
+# 5. SKLEARN LOGISTIC REGRESSION 
 print("\n[1/3] Training sklearn LogisticRegression...")
 sk_model = LogisticRegression(
     C=0.5,
@@ -132,9 +130,8 @@ sk_proba_va = sk_model.predict_proba(X_va_s)[:, 1]
 print("  done")
 
 
-# ── 6. MANUAL PYTORCH LOOP ────────────────────────────────────────────────────
-# Implements logistic regression from scratch: raw tensors, manual autograd,
-# manual parameter update — no nn.Module, no optimizer object.
+# 6. MANUAL PYTORCH LOOP
+# Implements logistic regression from scratch, raw tensors, manual autograd, manual parameter update — no nn.Module, no optimizer object.
 print("\n[2/3] Training manual PyTorch logistic regression...")
 
 X_tr_t = torch.from_numpy(X_tr_s)
@@ -185,7 +182,7 @@ with torch.no_grad():
     man_proba_te = torch.sigmoid(X_te_t @ w_man + b_man).squeeze().numpy()
 
 
-# ── 7. STANDARD PYTORCH (nn.Module + optim) ───────────────────────────────────
+# 7. STANDARD PYTORCH (nn.Module + optim)
 print("\n[3/3] Training standard PyTorch (nn.Module + Adam)...")
 
 
@@ -229,7 +226,7 @@ with torch.no_grad():
     nn_proba_te = torch.sigmoid(nn_model(X_te_t)).squeeze().numpy()
 
 
-# ── 8. EVALUATE ───────────────────────────────────────────────────────────────
+# 8. EVALUATE
 def compute_metrics(y_true: np.ndarray, y_proba: np.ndarray, threshold: float = 0.5) -> dict:
     y_pred = (y_proba >= threshold).astype(int)
     return {
@@ -241,7 +238,7 @@ def compute_metrics(y_true: np.ndarray, y_proba: np.ndarray, threshold: float = 
         'conf_mat':  confusion_matrix(y_true, y_pred),
     }
 
-# Naive baseline: always predict majority class (no pit stop)
+# Naive baseline: always predict majority class which here is no pit stop
 naive_proba = np.full(len(y_te), y_tr.mean(), dtype='float32')
 
 results = {
@@ -261,7 +258,7 @@ for name, m in results.items():
           f"{m['precision']:>7.4f} {m['recall']:>7.4f}")
 
 
-# ── 9. SAVE ARTIFACTS ─────────────────────────────────────────────────────────
+# 9. SAVE ARTIFACTS
 print("\nSaving artifacts...")
 
 with open(MODELS_DIR / "scaler.pkl", "wb") as f:
